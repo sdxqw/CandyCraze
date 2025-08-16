@@ -113,42 +113,11 @@ export class PlayerDataService implements OnStart {
 	}
 
 	/**
-	 * Get player data by UserId
-	 */
-	getPlayerDataByUserId(userId: number): PlayerData | undefined {
-		for (const [player, data] of this.profiles) {
-			if (player.UserId === userId) {
-				return data;
-			}
-		}
-		return undefined;
-	}
-
-	/**
 	 * Update player data with a callback function
 	 */
 	updatePlayerData<T>(player: Player, updateFn: (data: PlayerData) => T): T | undefined {
 		const data = this.getPlayerData(player);
 		if (!data) return undefined;
 		return updateFn(data);
-	}
-
-	/**
-	 * Update player data by UserId
-	 */
-	updatePlayerDataByUserId(userId: number, newData: PlayerData): void {
-		for (const [player, data] of this.profiles) {
-			if (player.UserId === userId) {
-				this.profiles.set(player, newData);
-				return;
-			}
-		}
-	}
-
-	/**
-	 * Get all loaded players
-	 */
-	getLoadedPlayers(): Player[] {
-		return [...this.loadedPlayers];
 	}
 }
