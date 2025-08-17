@@ -1,0 +1,31 @@
+import { Component } from "@flamework/components";
+import {
+	ClientToServer,
+	ServerToClient,
+	SharedComponent,
+	SharedComponentNetwork,
+} from "@rbxts/shared-components-flamework";
+import { CandyState, PlayerData } from "shared/types";
+
+@Component()
+export class CandyComponent extends SharedComponent<CandyState> {
+	protected state: CandyState = {
+		candyLevel: 1,
+		pointsPerClick: 1,
+		totalClicks: 0,
+		lastClickTime: 0,
+		playerId: 0,
+		clicksRemaining: 0,
+		maxClicks: 0,
+	};
+
+	protected remotes = {
+		candyClicked: SharedComponentNetwork.event<ClientToServer, [player: Player]>(),
+		playerDataUpdated: SharedComponentNetwork.event<ServerToClient, [playerData: PlayerData]>(),
+		candyStateUpdated: SharedComponentNetwork.event<ServerToClient, [candyState: CandyState]>(),
+		candyDataUpdated: SharedComponentNetwork.event<
+			ServerToClient,
+			[candyData: { level: number; playerId: number }]
+		>(),
+	};
+}

@@ -1,0 +1,156 @@
+import { Component } from "@flamework/components";
+import { OnStart } from "@flamework/core";
+import { CandyComponent } from "shared/components/CandyComponent";
+import { Players, ReplicatedStorage, Workspace, TweenService } from "@rbxts/services";
+
+@Component({ tag: "Candy" })
+export class ClientCandyComponent extends CandyComponent implements OnStart {
+	private playerCandy?: Model;
+
+	public onStart(): void {
+		this.setupNetworkHandlers();
+		this.setupClickHandler();
+		print("ClientCandyComponent started");
+	}
+
+	private setupNetworkHandlers(): void {
+		this.remotes.candyStateUpdated.Connect((candyState) => {
+			this.state = candyState;
+			print(
+				`[ClientCandyComponent] Candy state updated: Level ${candyState.candyLevel}, Points per click: ${candyState.pointsPerClick}`,
+			);
+		});
+
+		this.remotes.playerDataUpdated.Connect((playerData) => {
+			this.state = {
+				candyLevel: playerData.candyState.candyLevel,
+				pointsPerClick: playerData.candyState.pointsPerClick,
+				totalClicks: playerData.candyState.totalClicks,
+				lastClickTime: playerData.candyState.lastClickTime,
+				playerId: playerData.playerId,
+				clicksRemaining: playerData.candyState.clicksRemaining,
+				maxClicks: playerData.candyState.maxClicks,
+			};
+			print(
+				`[ClientCandyComponent] Player data updated: ${playerData.candyPoints} candy points, Candy level: ${playerData.candyState.candyLevel}`,
+			);
+		});
+
+		this.remotes.candyDataUpdated.Connect((candyData) => {
+			print(
+				`[ClientCandyComponent] Received candy data for spawning: Level ${candyData.level}, Player ID: ${candyData.playerId}`,
+			);
+			this.spawnCandyFromAssets(candyData.level, candyData.playerId);
+		});
+	}
+
+	private setupClickHandler(): void {
+		const mouse = Players.LocalPlayer.GetMouse();
+		mouse.Button1Down.Connect(() => {
+			this.handleClick();
+		});
+	}
+
+	private handleClick(): void {
+		if (!this.state) {
+			print(`[ClientCandyComponent] Cannot click: No candy state`);
+			return;
+		}
+		if (!this.playerCandy) {
+			print(`[ClientCandyComponent] Cannot click: No candy model`);
+			return;
+		}
+
+		const mouse = Players.LocalPlayer.GetMouse();
+		if (mouse.Target && mouse.Target.IsDescendantOf(this.playerCandy)) {
+			this.remotes.candyClicked.Fire(Players.LocalPlayer);
+			print(`[ClientCandyComponent] Candy clicked! Sending to server... (Level: ${this.state.candyLevel})`);
+			this.playClickFeedback();
+		} else {
+			print(
+				`[ClientCandyComponent] Click missed candy target (Target: ${
+					mouse.Target?.Name !== undefined || "none"
+				})`,
+			);
+		}
+	}
+
+	private spawnCandyFromAssets(level: number, playerId: number): void {
+		this.cleanupCandy();
+
+		const assetsFolder = ReplicatedStorage.FindFirstChild("Assets") as Folder;
+		if (!assetsFolder) {
+			warn("Assets folder not found in ReplicatedStorage");
+			return;
+		}
+
+		const candyAsset = assetsFolder.FindFirstChild(`Candy_Level_${level}`) as Model;
+		if (!candyAsset) {
+			warn(`Candy asset for level ${level} not found in ReplicatedStorage.Assets`);
+			return;
+		}
+
+		const map = Workspace.FindFirstChild("MAP") as Folder;
+		if (!map) {
+			warn("MAP folder not found in Workspace");
+			return;
+		}
+
+		const candyCenter = map.FindFirstChild("CandyCenter") as Folder | BasePart;
+		if (!candyCenter) {
+			warn("CandyCenter not found in Workspace.MAP");
+			return;
+		}
+
+		const candyClone = candyAsset.Clone();
+		candyClone.Name = `Candy_Player_${playerId}`;
+		candyClone.Parent = candyCenter;
+
+		if (candyCenter.IsA("BasePart")) {
+			candyClone.PivotTo(candyCenter.CFrame);
+		} else {
+			const spawnPoint = candyCenter.FindFirstChild("SpawnPoint") as BasePart;
+			if (spawnPoint) {
+				candyClone.PivotTo(spawnPoint.CFrame);
+			}
+		}
+
+		this.playerCandy = candyClone;
+		print(`Spawned candy at level ${level} for player ${playerId} in MAP.CandyCenter`);
+	}
+
+	private playClickFeedback(): void {
+		if (!this.playerCandy) return;
+
+		const candyPart =
+			(this.playerCandy.FindFirstChild("Candy") as BasePart) ||
+			(this.playerCandy.FindFirstChildOfClass("BasePart") as BasePart);
+
+		if (candyPart) {
+			const originalSize = candyPart.Size;
+			const bounceSize = originalSize.mul(1.1);
+			const bounceInfo = new TweenInfo(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true);
+			const bounceTween = TweenService.Create(candyPart, bounceInfo, { Size: bounceSize });
+			bounceTween.Play();
+
+			const clickSound = candyPart.FindFirstChild("ClickSound") as Sound;
+			if (clickSound) {
+				clickSound.Play();
+			} else {
+				const sound = new Instance("Sound");
+				sound.SoundId = "rbxasset://sounds/electronicpingshort.wav";
+				sound.Volume = 0.5;
+				sound.Parent = candyPart;
+				sound.Play();
+				sound.Ended.Connect(() => sound.Destroy());
+			}
+		}
+	}
+
+	private cleanupCandy(): void {
+		if (this.playerCandy) {
+			this.playerCandy.Destroy();
+			this.playerCandy = undefined;
+		}
+	}
+}

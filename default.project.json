@@ -23,9 +23,6 @@
 					}
 				}
 			},
-			"Assets": {
-				"$className": "Folder"
-			},
 			"TS": {
 				"$path": "out/shared"
 			}

@@ -1,85 +1,116 @@
-import { Service, OnStart } from "@flamework/core";
+import { Service, OnStart, OnInit } from "@flamework/core";
 import { Events } from "../network";
-import { OnPlayerDataLoaded, PlayerData } from "shared/types";
+import { OnPlayerDataLoaded, PlayerData, CandyState } from "shared/types";
 import { PlayerDataService } from "./PlayerDataService";
 
+/**
+ * Server-side candy service that handles candy click logic and data management.
+ * Focuses purely on business logic without visual concerns.
+ * Uses proper lifecycle management with OnInit and OnStart.
+ */
 @Service({})
-export class CandyService implements OnStart, OnPlayerDataLoaded {
+export class CandyService implements OnInit, OnStart, OnPlayerDataLoaded {
 	constructor(private readonly playerDataService: PlayerDataService) {}
+
+	/**
+	 * Initialize service dependencies and validate configuration
+	 */
+	public onInit(): void {
+		// Validate that PlayerDataService is available
+		if (!this.playerDataService) {
+			throw "CandyService requires PlayerDataService dependency";
+		}
+		print("CandyService initialized with dependencies");
+	}
+
+	/**
+	 * Start service operations and event handlers
+	 */
 	public onStart(): void {
 		Events.candyClicked.connect((player: Player) => {
-			this.playerDataService.updatePlayerData(player, (playerData) => {
-				this.processCandyClick(player, playerData);
-				return playerData;
-			});
+			this.handleCandyClick(player);
+		});
+		print("CandyService started - handling candy clicks");
+	}
+
+	/**
+	 * Called when player data is loaded - sends initial candy state to client
+	 */
+	public onPlayerDataLoaded(player: Player, playerData: PlayerData): void {
+		this.sendInitialCandyState(player, playerData);
+	}
+
+	/**
+	 * Handle candy click - pure data processing
+	 */
+	private handleCandyClick(player: Player): void {
+		this.playerDataService.updatePlayerData(player, (playerData) => {
+			const clickResult = this.processCandyClick(playerData);
+
+			// If level changed, notify for visual update
+			if (clickResult.levelChanged) {
+				Events.candyVisualUpdated.fire(player, {
+					level: playerData.candyState.candyLevel,
+					playerId: player.UserId,
+				});
+			}
+
+			return playerData;
 		});
 	}
 
 	/**
-	 * Called when player data is loaded - implements OnPlayerDataLoaded lifecycle event
+	 * Process candy click logic - returns click result info
 	 */
-	public onPlayerDataLoaded(player: Player, playerData: PlayerData): void {
-		this.spawnCandyForPlayer(player, playerData);
-	}
-
-	private processCandyClick(player: Player, playerData: PlayerData) {
-		// Add candy points based on current level
+	private processCandyClick(playerData: PlayerData): { levelChanged: boolean; pointsEarned: number } {
 		const pointsEarned = playerData.candyState.pointsPerClick;
+
+		// Add points
 		playerData.candyPoints += pointsEarned;
 		playerData.totalCandyPoints += pointsEarned;
 
-		// Increment click count
+		// Update click stats
 		playerData.candyState.totalClicks += 1;
 		playerData.totalClicks += 1;
 		playerData.candyState.lastClickTime = tick();
 
-		// Check if level up is required (max level is 6)
-		const maxLevel = 6;
-		if (playerData.candyState.candyLevel < maxLevel) {
-			const requiredClicks = this.calculateClicksForLevel(playerData.candyState.candyLevel + 1);
-			if (playerData.candyState.totalClicks >= requiredClicks) {
-				// Level up!
-				playerData.candyState.candyLevel += 1;
-				playerData.candyState.totalClicks = 0; // Reset click count
-				playerData.candyState.pointsPerClick = math.floor(playerData.candyState.pointsPerClick * 1.2); // Increase points per click
+		// Check for level up
+		const levelChanged = this.checkAndProcessLevelUp(playerData.candyState);
 
-				// Send level up notification
-				if (playerData.candyState.candyLevel >= maxLevel) {
-					print(`Player ${player.Name} reached maximum candy level ${maxLevel}!`);
-				} else {
-					print(`Player ${player.Name} leveled up to candy level ${playerData.candyState.candyLevel}!`);
-				}
-			}
-		}
-
-		// Send updated data to client
-		Events.playerDataUpdated.fire(player, playerData);
-		Events.candyStateUpdated.fire(player, playerData.candyState);
-
-		// Update candy visual if level changed
-		Events.candyDataUpdated.fire(player, {
-			level: playerData.candyState.candyLevel,
-			playerId: player.UserId,
-		});
+		return { levelChanged, pointsEarned };
 	}
 
 	/**
-	 * Spawn candy for player and send initial state data
+	 * Check and process candy level up logic
 	 */
-	public spawnCandyForPlayer(player: Player, playerData: PlayerData): void {
-		// Send initial player data and candy state to client
-		Events.playerDataUpdated.fire(player, playerData);
-		Events.candyStateUpdated.fire(player, playerData.candyState);
+	private checkAndProcessLevelUp(candyState: CandyState): boolean {
+		const maxLevel = 6;
+		if (candyState.candyLevel >= maxLevel) return false;
 
-		// Send candy data to client for visual spawning
-		Events.candyDataUpdated.fire(player, {
+		const requiredClicks = this.calculateClicksForLevel(candyState.candyLevel + 1);
+		if (candyState.totalClicks >= requiredClicks) {
+			candyState.candyLevel += 1;
+			candyState.totalClicks = 0;
+			candyState.pointsPerClick = math.floor(candyState.pointsPerClick * 1.2);
+
+			print(`Candy leveled up to ${candyState.candyLevel}!`);
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Send initial candy state to client when player data loads
+	 */
+	private sendInitialCandyState(player: Player, playerData: PlayerData): void {
+		// Send initial candy visual data to client for spawning
+		Events.candyVisualUpdated.fire(player, {
 			level: playerData.candyState.candyLevel,
 			playerId: player.UserId,
 		});
 
-		print(
-			`Sent initial candy state to ${player.Name}: Level ${playerData.candyState.candyLevel}, Points per click: ${playerData.candyState.pointsPerClick}`,
-		);
+		print(`Initialized candy state for ${player.Name}: Level ${playerData.candyState.candyLevel}`);
 	}
 
 	/**
@@ -87,5 +118,13 @@ export class CandyService implements OnStart, OnPlayerDataLoaded {
 	 */
 	private calculateClicksForLevel(level: number): number {
 		return math.floor(10 * math.pow(1.5, level - 1));
+	}
+
+	/**
+	 * Get current candy state for a player (public API)
+	 */
+	public getCandyState(player: Player): CandyState | undefined {
+		const playerData = this.playerDataService.getPlayerData(player);
+		return playerData?.candyState;
 	}
 }

@@ -1,5 +1,5 @@
 import { Networking } from "@flamework/networking";
-import { PlayerData, CandyState } from "./types";
+import { PlayerData } from "./types";
 
 // Simplified networking - only essential events
 
@@ -9,14 +9,11 @@ interface ClientToServerEvents {
 }
 
 interface ServerToClientEvents {
-	/** Send updated player data to client */
+	/** Send updated player data to client (includes candy state) */
 	playerDataUpdated: (data: PlayerData) => void;
 
-	/** Send candy state update */
-	candyStateUpdated: (candyState: CandyState) => void;
-
-	/** Send candy data for client-side spawning */
-	candyDataUpdated: (candyData: { level: number; playerId: number }) => void;
+	/** Send candy visual update when level changes */
+	candyVisualUpdated: (candyData: { level: number; playerId: number }) => void;
 }
 
 interface ClientToServerFunctions {}
