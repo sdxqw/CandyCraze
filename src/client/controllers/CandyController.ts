@@ -1,7 +1,9 @@
 import { Controller, OnStart, OnInit } from "@flamework/core";
-import { Players, TweenService, ReplicatedStorage, Workspace } from "@rbxts/services";
+import { Players, ReplicatedStorage, Workspace } from "@rbxts/services";
+import { Make, Modify } from "@rbxts/altmake";
 import { Events } from "client/network";
 import { CandyState } from "shared/types";
+import { mountCandyInfo } from "client/ui/components/CandyInfo";
 
 /**
  * Client-side candy controller that handles all candy-related client functionality:
@@ -45,10 +47,9 @@ export class CandyController implements OnInit, OnStart {
 				print(
 					`[Candy] Player data updated: ${playerData.candyPoints} candy points, Candy level: ${this.candyState.candyLevel}`,
 				);
-				// Spawn candy if we don't have one yet
-				if (!this.playerCandy) {
-					this.spawnCandyFromAssets(playerData.candyState.candyLevel, Players.LocalPlayer.UserId);
-				}
+
+				// Always spawn/update candy with current state
+				this.spawnCandyFromAssets(playerData.candyState.candyLevel, Players.LocalPlayer.UserId);
 			}
 		});
 
@@ -94,44 +95,49 @@ export class CandyController implements OnInit, OnStart {
 	private playClickFeedback(): void {
 		if (!this.playerCandy) return;
 
-		// Find the main candy part for animation
-		const candyPart =
-			(this.playerCandy.FindFirstChild("Candy") as BasePart) ||
-			(this.playerCandy.FindFirstChildOfClass("BasePart") as BasePart);
+		// Try to find any part for animation - check AttachUI first, then any part
+		const candyPart = this.playerCandy.FindFirstChild("Body") as Part;
 
 		if (candyPart) {
-			this.animateCandyBounce(candyPart);
 			this.playClickSound(candyPart);
 		}
 	}
 
 	/**
-	 * Animate candy bounce effect
+	 * Play click sound effect with random sound selection
 	 */
-	private animateCandyBounce(candyPart: BasePart): void {
-		const originalSize = candyPart.Size;
-		const bounceSize = originalSize.mul(1.1);
+	private playClickSound(candyPart: BasePart | Model): void {
+		// Array of candy click sound IDs
+		const candySounds = ["rbxassetid://71494735856888", "rbxassetid://104017874962810"];
 
-		const bounceInfo = new TweenInfo(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true);
-		const bounceTween = TweenService.Create(candyPart, bounceInfo, { Size: bounceSize });
-		bounceTween.Play();
-	}
+		// Select random sound
+		const randomIndex = math.random(0, candySounds.size() - 1);
+		const selectedSoundId = candySounds[randomIndex];
 
-	/**
-	 * Play click sound effect
-	 */
-	private playClickSound(candyPart: BasePart): void {
+		// Check for existing click sound
 		const clickSound = candyPart.FindFirstChild("ClickSound") as Sound;
 		if (clickSound) {
+			print(`[Candy] Updating existing click sound with ID: ${selectedSoundId}`);
+			// Update existing sound with random selection using Modify
+			Modify(clickSound, {
+				SoundId: selectedSoundId,
+				Volume: 0.7,
+			});
 			clickSound.Play();
 		} else {
-			// Create a simple click sound if none exists
-			const sound = new Instance("Sound");
-			sound.SoundId = "rbxasset://sounds/electronicpingshort.wav";
-			sound.Volume = 0.5;
-			sound.Parent = candyPart;
+			// Create new sound with random selection using Make
+			const sound = Make("Sound", {
+				Name: "ClickSound",
+				SoundId: selectedSoundId,
+				Volume: 0.7,
+				Parent: candyPart,
+			});
 			sound.Play();
-			sound.Ended.Connect(() => sound.Destroy());
+
+			// Clean up sound after playing
+			sound.Ended.Connect(() => {
+				sound.Destroy();
+			});
 		}
 	}
 
@@ -156,28 +162,29 @@ export class CandyController implements OnInit, OnStart {
 			return;
 		}
 
-		// Find MAP.CandyCenter in Workspace
-		const map = Workspace.FindFirstChild("MAP") as Folder;
-		if (!map) {
-			warn("MAP folder not found in Workspace");
-			return;
-		}
-
-		const candyCenter = map.FindFirstChild("CandyCenter") as Folder | BasePart;
+		// Get CandyCenter using MapService
+		const candyCenter = Workspace.FindFirstChild("MAP")?.FindFirstChild("CandyCenter");
 		if (!candyCenter) {
-			warn("CandyCenter not found in Workspace.MAP");
+			warn("CandyCenter not available from MapService");
 			return;
 		}
 
-		// Clone and spawn the candy
+		// Clone and spawn the candy using Make for enhanced setup
 		const candyClone = candyAsset.Clone();
-		candyClone.Name = `Candy_Player_${playerId}`;
-		candyClone.Parent = candyCenter;
+		Modify(candyClone, {
+			Name: `Candy_Player_${playerId}`,
+			Parent: candyCenter,
+		});
 
 		// Position the candy (if CandyCenter is a BasePart, use its position)
 		if (candyCenter.IsA("BasePart")) {
 			candyClone.PivotTo(candyCenter.CFrame);
 		}
+
+		// Add UI info - show candy level
+		mountCandyInfo(candyClone, {
+			title: `Level ${level} Candy`,
+		});
 
 		// Store reference and setup click detection
 		this.playerCandy = candyClone;
@@ -185,7 +192,7 @@ export class CandyController implements OnInit, OnStart {
 	}
 
 	/**
-	 * Update candy visual level by spawning new candy
+	 * Update candy level and respawn with new visual
 	 */
 	public updateCandyLevel(newLevel: number, playerId: number): void {
 		print(`[Candy] Updating candy to level ${newLevel} for player ${playerId}`);

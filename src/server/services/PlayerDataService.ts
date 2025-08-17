@@ -9,7 +9,7 @@ import ProfileService from "@rbxts/profileservice";
 
 @Service()
 export class PlayerDataService implements OnStart {
-	private profileStore = ProfileService.GetProfileStore("PlayerTests", DEFAULT_PLAYER_DATA);
+	private profileStore = ProfileService.GetProfileStore("PlayerTests2", DEFAULT_PLAYER_DATA);
 	private profiles = new Map<Player, PlayerData>();
 	private loadedPlayers = new Set<Player>();
 	private listeners = new Set<OnPlayerDataLoaded>();
